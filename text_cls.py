@@ -1,7 +1,8 @@
 from collections import Counter
+
 import torch
-from torch.utils.data import Dataset, DataLoader
-import torch.nn as nn
+from torch.utils.data import Dataset
+
 
 PAD_INDX = 0
 
@@ -52,40 +53,6 @@ class TextClsDataset(Dataset):
         ids, label = self.samples[indx]
         return torch.tensor(ids, dtype=torch.long), torch.tensor(label, dtype=torch.long)
     
-    
-def collate_fn(batch):
-    seqs, labels = zip(*batch)
-    length = torch.tensor([len(s) for s in seqs])
-    padded = torch.nn.utils.rnn.pad_sequence(seqs, batch_first=True, padding_value=PAD_INDX)
-    max_len = padded.size(1)
-    mask = (torch.arange(max_len).unsqueeze(0) < length.unsqueeze(1)).long()
-    labels = torch.stack(labels)
-    return padded, mask, labels
-
-class BagOfEmbedding(nn.Module):
-    def __init__(self, vocab_size, embed_dim, num_classes, pad_indx=0):
-        super().__init__()
-        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=pad_indx)
-        self.classifier = nn.Linear(embed_dim, num_classes)
-        
-        with torch.no_grad():
-            nn.init.normal_(self.embedding.weight, mean=0.0, std=0.1)
-            self.embedding.weight[0].zero_()
-            
-        nn.init.xavier_uniform_(self.classifier.weight)
-        nn.init.zeros_(self.classifier.bias)
-        
-    def forward(self, x, mask):
-        emb = self.embedding(x)
-        mask_f = mask.unsqueeze(-1).float()
-        emb = emb * mask_f
-        summed = emb.sum(dim=1)
-        count = mask.sum(dim=1, keepdim=True)
-        count = count.clamp(min=1)
-        pooled = summed/count
-        logits = self.classifier(pooled)
-        return logits
-    
 
 def train_one_epoch(model, loader, optimizer, loss_fn, device):
     model.train()
@@ -109,13 +76,34 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device):
 
 
 @torch.no_grad()
+def validate(model, loader, loss_fn, device):
+    model.eval()
+    total_loss, correct, total = 0.0, 0, 0
+    
+    for x, mask, y in loader:
+        x, mask, y = x.to(device), mask.to(device), y.to(device)
+        logits = model(x, mask)
+        loss = loss_fn(logits, y)
+        
+        total_loss += loss.item() * y.size(0)
+        correct += (logits.argmax(dim=-1) == y).sum().item()
+        total += y.size(0)
+    return total_loss / total, correct / total
+
+
+ID_LABEL = {0: "World", 1: "Sports", 2: "Business", 3: "Sci-Tech"}
+
+
+@torch.no_grad()
 def predict(text, model, vocab, device):
     model.eval()
-    tokens = tokenizer(text)
-    ids = vocab.encode(tokens)
-    x = torch.tensor(ids, dtype=torch.long).unsqueeze(0).to(device)
+
+    ids = vocab.encode(tokenizer(text))
+    x = torch.tensor(ids, dtype=torch.long, device=device).unsqueeze(0)
     mask = torch.ones_like(x)
+
     logits = model(x, mask)
-    probs = torch.softmax(logits, dim=-1).squeeze(0)
-    pred = probs.argmax().item()
-    return pred, probs.tolist()
+    probs = torch.softmax(logits, dim=-1)
+
+    pred = probs.argmax(dim=-1).item()
+    return ID_LABEL[pred], probs.squeeze(0).tolist()
