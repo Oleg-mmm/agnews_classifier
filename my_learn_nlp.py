@@ -85,3 +85,37 @@ class BagOfEmbedding(nn.Module):
         pooled = summed/count
         logits = self.classifier(pooled)
         return logits
+    
+
+def train_one_epoch(model, loader, optimizer, loss_fn, device):
+    model.train()
+    total_loss, correct, total = 0.0, 0, 0
+    
+    for x, mask, y in loader:
+        x, mask, y = x.to(device), mask.to(device), y.to(device)
+        
+        optimizer.zero_grad()
+        logits = model(x, mask)
+        loss = loss_fn(logits, y)
+        
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item() * y.size(0)
+        correct += (logits.argmax(dim=-1) == y).sum().item()
+        total += y.size(0)
+        
+    return total_loss/total, correct/total
+
+
+@torch.no_grad()
+def predict(text, model, vocab, device):
+    model.eval()
+    tokens = tokenizer(text)
+    ids = vocab.encode(tokens)
+    x = torch.tensor(ids, dtype=torch.long).unsqueeze(0).to(device)
+    mask = torch.ones_like(x)
+    logits = model(x, mask)
+    probs = torch.softmax(logits, dim=-1).squeeze(0)
+    pred = probs.argmax().item()
+    return pred, probs.tolist()
