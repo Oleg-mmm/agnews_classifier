@@ -108,3 +108,24 @@ def predict(text, model, vocab, device):
 
     pred = probs.argmax(dim=-1).item()
     return ID_LABEL[pred], probs.squeeze(0).tolist()
+
+
+class EarlyStopping:
+    def __init__(self, patience=5, delta=1e-3):
+        self.patience = patience
+        self.delta = delta
+        self.best_loss = float('inf')
+        self.counter = 0
+        self.early_stop = False
+        
+    def __call__(self, cur_loss):
+        if cur_loss < self.best_loss - self.delta:
+            self.best_loss = cur_loss
+            self.counter = 0
+            return True # improved
+            
+        self.counter += 1
+        if self.counter == self.patience:
+            self.early_stop = True
+            return False
+        return False

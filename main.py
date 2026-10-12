@@ -7,13 +7,14 @@ from datasets import load_dataset
 
 from text_cls import (
     PAD_INDX,
+    EarlyStopping,
     tokenizer,
     Vocab,
     TextClsDataset,
     train_one_epoch,
     validate,
 )
-from models.bof import BagOfEmbedding, collate_fn
+from models.birnn import BiRNNClassifier, collate_fn
 
 
 def main():
@@ -59,27 +60,34 @@ def main():
     NUM_CLASSES = 4   # AG News: World; Sports; Business; Sci-Tech
     EMBED_DIM = 128
     LR = 1e-3
-    EPOCHS = 5
+    EPOCHS = 15
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device: {device}')
 
-    model = BagOfEmbedding(V, EMBED_DIM, NUM_CLASSES, PAD_INDX).to(device)
+    model = BiRNNClassifier(V, EMBED_DIM, NUM_CLASSES, PAD_INDX).to(device)
     optimizer = torch.optim.Adam(model.parameters(), LR)
     loss_fn = nn.CrossEntropyLoss()
+    early_stopping = EarlyStopping(patience=3)
 
     for epoch in range(1, EPOCHS + 1):
-        tr_loss, tr_acc = train_one_epoch(model, train_loader, optimizer, loss_fn, device)
-        va_loss, va_acc = validate(model, val_loader, loss_fn, device)
+        train_loss, train_acc = train_one_epoch(model, train_loader, optimizer, loss_fn, device)
+        val_loss, val_acc = validate(model, val_loader, loss_fn, device)
 
-        print(f"epoch {epoch}: train loss  = {tr_loss:.4f}; acc = {tr_acc:.4f}")
-        print(f"val loss {va_loss:.4f} acc {va_acc:.4f}")
+        print(f"epoch {epoch}: train loss  = {train_loss:.4f}; acc = {train_acc:.4f}")
+        print(f"val loss {val_loss:.4f} acc {val_acc:.4f}")
         print()
+        
+        improved = early_stopping(val_loss)
+        if improved:
+            torch.save(model.state_dict(), 'birnn_agnews.pt')
+        if early_stopping.early_stop:
+            print(f'early stopping at epoch {epoch}')
+            break
 
+    model.load_state_dict(torch.load('birnn_agnews.pt', map_location=device))
     test_loss, test_acc = validate(model, test_loader, loss_fn, device)
     print(f"TEST: loss = {test_loss:.4f}; acc = {test_acc:.4f}")
-
-    torch.save(model.state_dict(), 'bof_agnews.pt')
-
+    
 
 if __name__ == "__main__":
     main()
