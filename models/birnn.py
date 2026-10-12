@@ -23,7 +23,7 @@ class BiRNNClassifier(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim, pad_indx)
         self.rnn = nn.RNN(embed_dim, embed_dim, num_layers=1, batch_first=True, bidirectional=True)
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.5)
         self.classifier = nn.Linear(2*embed_dim, num_classes)
         
         with torch.no_grad():
