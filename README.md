@@ -1,7 +1,23 @@
-# agnews_classifier
+# AG News Classifier
 
 Сравнение архитектур классификации текста на датасете AG News.
-Начинаю с простого baseline на Bag-of-Embeddings, затем перехожу на другие модели: RNN, BiRNN, LSTM, Transformer.
+
+**Два подхода:**
+1. **Обучение с нуля:** BoF, RNN, BiRNN, BiLSTM, Transformer — кастомные архитектуры на PyTorch.
+2. **Transfer Learning:** Fine-tuning `distilbert-base-uncased` (Hugging Face) — предобученная модель.
+
+Оба подхода используют одинаковый seed (123) и одинаковое разбиение train/val/test.
+
+## Что демонстрирует проект
+
+- Реализация кастомных архитектур с нуля на PyTorch: BoF, RNN, BiRNN, BiLSTM.
+- Fine-tuning предобученных трансформеров через Hugging Face (`AutoModel`, `AutoTokenizer`, `Trainer`).
+- Работа с библиотекой `datasets` для загрузки и обработки текстовых данных.
+- Сравнительный анализ: обучение с нуля vs transfer learning.
+- Структурированный код: разделение на `config.py`, `data.py`, `train.py`.
+- Воспроизводимость: фиксированный seed, единое разбиение данных.
+- Контроль переобучения: EarlyStopping, Dropout, gradient clipping.
+- Метрики: accuracy, macro F1 через `sklearn`.
 
 ## Результаты
 
@@ -15,6 +31,7 @@ train/val/test и одинаковый словарь. Test accuracy счита�
 | RNN + dropout 0.3         | 9.47M     | 0.9038       | 0.9038   | ~2.0 мин    | переобучается после ep 5        |
 | BiRNN (emb=64, drop=0.5)  | 4.73M     | 0.9098       | 0.9092   | ~1.8 мин    | переобучается после ep 2        |
 | BiLSTM (emb=64, drop=0.5) | 4.78M     | 0.9128       | 0.9157   | ~1.8 мин    | beats BoF, переобучается после ep 2 |
+| **DistilBERT (fine-tuned)** | **66M** | **0.9466** | **0.9466** | **~7 мин** | **Hugging Face, 2 эпохи** |
 
 ## Детали по моделям
 
@@ -95,3 +112,45 @@ Test: loss = 0.2573, acc = **0.9157**
 
 Первая модель, обогнавшая BoF (0.9145). LSTM gate решают проблему
 затухающих градиентов, которая мешала RNN и BiRNN.
+
+## Fine-tuning DistilBERT (Hugging Face)
+
+Второй подход — использование предобученной модели `distilbert-base-uncased` из библиотеки `transformers` (Hugging Face) с дообучением под задачу классификации AG News.
+
+### Реализация
+
+- **Библиотеки:** `transformers`, `datasets`, `scikit-learn`.
+- **Архитектура:** `AutoModelForSequenceClassification` с `num_labels=4`.
+- **Токенизация:** `AutoTokenizer`, `max_length=64`, динамический padding через `DataCollatorWithPadding`.
+- **Обучение:** `Trainer` API, `AdamW` (lr=2e-5), `warmup_steps=0.06`, weight_decay=0.01, fp16.
+- **Метрики:** `accuracy`, `macro_f1` через `compute_metrics`.
+- **Эпох:** 2.
+
+### Результаты
+
+| Эпоха | Train Loss | Val Loss | Val Acc | Macro F1 |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | 0.2072 | 0.1743 | 0.9408 | 0.9407 |
+| 2 | 0.1317 | 0.1670 | **0.9466** | **0.9466** |
+
+**Test Accuracy: 0.9466**, **Macro F1: 0.9466**.
+
+### Вывод
+
+Fine-tuned DistilBERT превзошёл все кастомные архитектуры, обученные с нуля, **за 2 эпохи**:
+
+| Подход | Лучшая модель | Test Acc |
+| :--- | :--- | :--- |
+| Обучение с нуля | BiLSTM | 0.9157 |
+| Transfer Learning | DistilBERT | **0.9466** |
+
+**Разница +3.1% accuracy.** Это демонстрирует силу transfer learning: предобученная модель уже «понимает» язык, поэтому для адаптации к новой задаче достаточно нескольких эпох.
+
+**Почему AG News так легко решается:** задача имеет сильный лексический сигнал, а порядок слов малоинформативен. Поэтому даже простой BoF показывает 91%, а DistilBERT с контекстными эмбеддингами выходит на 94.7% за 2 эпохи.
+
+### Файлы
+
+- `config.py` — гиперпараметры и константы.
+- `data.py` — загрузка датасета, токенизация, подготовка.
+- `train.py` — fine-tuning через `Trainer`.
+- Чекпоинт: `distilbert_agnews_final/`.
