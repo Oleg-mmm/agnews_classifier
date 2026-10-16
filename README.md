@@ -31,7 +31,9 @@ train/val/test и одинаковый словарь. Test accuracy счита�
 | RNN + dropout 0.3         | 9.47M     | 0.9038       | 0.9038   | ~2.0 мин    | переобучается после ep 5        |
 | BiRNN (emb=64, drop=0.5)  | 4.73M     | 0.9098       | 0.9092   | ~1.8 мин    | переобучается после ep 2        |
 | BiLSTM (emb=64, drop=0.5) | 4.78M     | 0.9128       | 0.9157   | ~1.8 мин    | beats BoF, переобучается после ep 2 |
-| **DistilBERT (fine-tuned)** | **66M** | **0.9466** | **0.9466** | **~7 мин** | **Hugging Face, 2 эпохи** |
+| **DistilBERT (fine-tuned)** | **66M** | **0.9466** | **0.9466** | **~12 мин** | **Hugging Face, 2 эпохи** |
+
+**Примечание:** Кастомные модели (BoF, RNN, BiRNN, BiLSTM) обучались на CPU. Fine-tuning `distilbert-base-uncased` выполнялся в Google Colab на GPU (Tesla T4).
 
 ## Детали по моделям
 
