@@ -31,9 +31,10 @@ train/val/test и одинаковый словарь. Test accuracy счита�
 | RNN + dropout 0.3         | 9.47M     | 0.9038       | 0.9038   | ~2.0 мин    | переобучается после ep 5        |
 | BiRNN (emb=64, drop=0.5)  | 4.73M     | 0.9098       | 0.9092   | ~1.8 мин    | переобучается после ep 2        |
 | BiLSTM (emb=64, drop=0.5) | 4.78M     | 0.9128       | 0.9157   | ~1.8 мин    | beats BoF, переобучается после ep 2 |
+| **Transformer**  | **10.41M** | **0.9225** | **0.9222** | **~15 мин** | **2 слоя, 4 головы, переобучается после ep 6** |
 | **DistilBERT (fine-tuned)** | **66M** | **0.9466** | **0.9466** | **~12 мин** | **Hugging Face, 2 эпохи** |
 
-**Примечание:** Кастомные модели (BoF, RNN, BiRNN, BiLSTM) обучались на CPU. Fine-tuning `distilbert-base-uncased` выполнялся в Google Colab на GPU (Tesla T4).
+**Примечание:** Кастомные модели (BoF, RNN, BiRNN, BiLSTM, Transformer) обучались на CPU (Ryzen 7). Fine-tuning `distilbert-base-uncased` выполнялся в Google Colab на GPU (Tesla T4).
 
 ## Детали по моделям
 
@@ -115,6 +116,33 @@ Test: loss = 0.2573, acc = **0.9157**
 Первая модель, обогнавшая BoF (0.9145). LSTM gate решают проблему
 затухающих градиентов, которая мешала RNN и BiRNN.
 
+### Transformer (custom, from scratch)
+
+Архитектура: Embedding (dim=128) → PositionalEncoding (обучаемый, max_len=128)
+→ 2 × EncoderBlock → LayerNorm → masked mean pooling → Linear.
+
+Каждый `EncoderBlock` — это Pre-LN + MultiHeadAttention (4 головы, d_k=32) + residual,
+затем Pre-LN + FeedForward (4x расширение, GELU) + residual. Dropout=0.2.
+Всего **10.41M параметров**.
+
+Гиперпараметры: `batch_size=64`, `LR=5e-4`, `Adam`, `max_epochs=10`,
+`early_stopping(patience=3, delta=1e-4)` по `val_loss`.
+
+| Эпоха | Train Loss | Train Acc | Val Loss | Val Acc      |
+|-------|------------|-----------|----------|--------------|
+| 1     | 0.7414     | 0.6931    | 0.3166   | 0.8918       |
+| 2     | 0.3744     | 0.8678    | 0.2840   | 0.9051       |
+| 3     | 0.2965     | 0.8969    | 0.2730   | 0.9123       |
+| 4     | 0.2532     | 0.9113    | 0.2432   | 0.9177       |
+| 5     | 0.2228     | 0.9212    | 0.2917   | 0.9004       |
+| 6     | 0.1978     | 0.9310    | 0.2362   | **0.9225**   |
+| 7     | 0.1775     | 0.9377    | 0.2433   | 0.9249       |
+| 8     | 0.1594     | 0.9438    | 0.2474   | 0.9227       |
+| 9     | 0.1444     | 0.9491    | 0.2567   | 0.9235       |
+
+Early stopping на эпохе 9 (best — эпоха 6, `val_loss = 0.2362`).
+Test: loss = 0.2397, acc = **0.9222**.
+
 ## Fine-tuning DistilBERT (Hugging Face)
 
 Второй подход — использование предобученной модели `distilbert-base-uncased` из библиотеки `transformers` (Hugging Face) с дообучением под задачу классификации AG News.
@@ -143,10 +171,10 @@ Fine-tuned DistilBERT превзошёл все кастомные архите�
 
 | Подход | Лучшая модель | Test Acc |
 | :--- | :--- | :--- |
-| Обучение с нуля | BiLSTM | 0.9157 |
+| Обучение с нуля | Transformer (custom) | 0.9222 |
 | Transfer Learning | DistilBERT | **0.9466** |
 
-**Разница +3.1% accuracy.** Это демонстрирует силу transfer learning: предобученная модель уже «понимает» язык, поэтому для адаптации к новой задаче достаточно нескольких эпох.
+**Разница +2.4% accuracy.** Это демонстрирует силу transfer learning: предобученная модель уже «понимает» язык, поэтому для адаптации к новой задаче достаточно нескольких эпох.
 
 **Почему AG News так легко решается:** задача имеет сильный лексический сигнал, а порядок слов малоинформативен. Поэтому даже простой BoF показывает 91%, а DistilBERT с контекстными эмбеддингами выходит на 94.7% за 2 эпохи.
 
