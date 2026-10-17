@@ -1,5 +1,4 @@
 import random
-
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -14,7 +13,7 @@ from text_cls import (
     train_one_epoch,
     validate,
 )
-from models.birnn import BiRNNClassifier, collate_fn
+from models.transformer.transformer_model import TransformerClassifier, collate_fn
 
 
 def main():
@@ -46,9 +45,10 @@ def main():
     split = int(0.9*len(train_data))
     train_data, val_data = train_data[:split], train_data[split:]
 
-    train_dataset = TextClsDataset(train_data, vocab, tokenizer)
-    val_dataset   = TextClsDataset(val_data,   vocab, tokenizer)
-    test_dataset  = TextClsDataset(test_data,  vocab, tokenizer)
+    MAX_LEN = 128
+    train_dataset = TextClsDataset(train_data, vocab, tokenizer, max_len=MAX_LEN)
+    val_dataset   = TextClsDataset(val_data,   vocab, tokenizer, max_len=MAX_LEN)
+    test_dataset  = TextClsDataset(test_data,  vocab, tokenizer, max_len=MAX_LEN)
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,
                               collate_fn=collate_fn, num_workers=NUM_WORKERS)
@@ -59,15 +59,24 @@ def main():
 
     NUM_CLASSES = 4   # AG News: World; Sports; Business; Sci-Tech
     EMBED_DIM = 128
-    LR = 1e-3
-    EPOCHS = 15
+    LR = 5e-4
+    EPOCHS = 10
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'device: {device}')
 
-    model = BiRNNClassifier(V, EMBED_DIM, NUM_CLASSES, PAD_INDX).to(device)
+    model = TransformerClassifier(
+        vocab_size=V,
+        embed_dim=EMBED_DIM,
+        num_classes=NUM_CLASSES,
+        pad_indx=PAD_INDX,
+        num_heads=4,
+        num_layers=2,
+        dropout=0.2,
+    ).to(device)
+    
     optimizer = torch.optim.Adam(model.parameters(), LR)
     loss_fn = nn.CrossEntropyLoss()
-    early_stopping = EarlyStopping(patience=3)
+    early_stopping = EarlyStopping(patience=2)
 
     for epoch in range(1, EPOCHS + 1):
         train_loss, train_acc = train_one_epoch(model, train_loader, optimizer, loss_fn, device)
@@ -79,12 +88,12 @@ def main():
         
         improved = early_stopping(val_loss)
         if improved:
-            torch.save(model.state_dict(), 'birnn_agnews.pt')
+            torch.save(model.state_dict(), 'transformer_agnews.pt')
         if early_stopping.early_stop:
             print(f'early stopping at epoch {epoch}')
             break
 
-    model.load_state_dict(torch.load('birnn_agnews.pt', map_location=device))
+    model.load_state_dict(torch.load('transformer_agnews.pt', map_location=device))
     test_loss, test_acc = validate(model, test_loader, loss_fn, device)
     print(f"TEST: loss = {test_loss:.4f}; acc = {test_acc:.4f}")
     

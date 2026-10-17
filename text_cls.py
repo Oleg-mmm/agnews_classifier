@@ -37,13 +37,15 @@ class Vocab:
     
 
 class TextClsDataset(Dataset):
-    def __init__(self, data, vocab, tokenizer):
+    def __init__(self, data, vocab, tokenizer, max_len=None):
         super().__init__()
         self.vocab = vocab
         self.tokenizer = tokenizer
         self.samples = []
         for text, label in data:
             ids = vocab.encode(tokenizer(text))
+            if max_len is not None:
+                ids = ids[:max_len]
             self.samples.append([ids, label])
     
     def __len__(self):
