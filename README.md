@@ -2,11 +2,25 @@
 
 Сравнение архитектур классификации текста на датасете AG News.
 
-**Два подхода:**
+**Три подхода:**
 1. **Обучение с нуля:** BoF, RNN, BiRNN, BiLSTM, Transformer — кастомные архитектуры на PyTorch.
-2. **Transfer Learning:** Fine-tuning `distilbert-base-uncased` (Hugging Face) — предобученная модель.
+2. **Transfer Learning:** Fine-tuning `distilbert-base-uncased` (Hugging Face).
+3. **Классический ML:** TF-IDF + Logistic Regression — быстрый baseline на sklearn.
 
 Оба подхода используют одинаковый seed (123) и одинаковое разбиение train/val/test.
+
+## Главный вывод
+
+**TF-IDF + Logistic Regression обучается за 18 секунд на CPU и показывает 92.4% accuracy** — это обгоняет кастомный Transformer на 10.4M параметров (~2 часа обучения) и лишь на 2.25% отстаёт от fine-tuned DistilBERT (66M, GPU).
+
+| Модель | Test Acc | Время обучения | Железо |
+|---|---|---|---|
+| **TF-IDF + LogReg** | **0.9241** | **18 сек** | **CPU** |
+| BiLSTM (custom) | 0.9157 | ~7 мин | CPU |
+| Transformer (custom, 10.4M) | 0.9222 | ~2 часа | CPU |
+| DistilBERT (fine-tuned, 66M) | 0.9466 | ~24 мин | GPU T4 |
+
+Сложная модель - не всегда оптимальное решение. Для лексических задач классический baseline даёт почти лучшее качество за куда меньшую стоимость. Детали и сравнение всех архитектур - ниже.
 
 ## Что демонстрирует проект
 
@@ -27,7 +41,8 @@ train/val/test и одинаковый словарь. Test accuracy счита�
 
 | Модель                    | Параметры | Best Val Acc | Test Acc | Время/эпоха | Примечания                     |
 |---------------------------|-----------|--------------|----------|-------------|--------------------------------|
-| BoF                       | 9.43M     | 0.9203       | 0.9145   | ~1.6 мин    | baseline, переобучается с ep 3  |
+| **TF-IDF + LogReg** | ~100k признаков | — | **0.9241** | **18 сек** | **sklearn, CPU, обучение на полном train (без val)** |
+| BoF                       | 9.43M     | 0.9203       | 0.9145   | ~1.6 мин    | переобучается с ep 3  |
 | RNN + dropout 0.3         | 9.47M     | 0.9038       | 0.9038   | ~2.0 мин    | переобучается после ep 5        |
 | BiRNN (emb=64, drop=0.5)  | 4.73M     | 0.9098       | 0.9092   | ~1.8 мин    | переобучается после ep 2        |
 | BiLSTM (emb=64, drop=0.5) | 4.78M     | 0.9128       | 0.9157   | ~1.8 мин    | beats BoF, переобучается после ep 2 |
@@ -37,6 +52,24 @@ train/val/test и одинаковый словарь. Test accuracy счита�
 **Примечание:** Кастомные модели (BoF, RNN, BiRNN, BiLSTM, Transformer) обучались на CPU (Ryzen 7). Fine-tuning `distilbert-base-uncased` выполнялся в Google Colab на GPU (Tesla T4).
 
 ## Детали по моделям
+
+### Baseline: TF-IDF + Logistic Regression
+
+Простейший классический пайплайн на `sklearn`, чтобы проверить, насколько сложные модели вообще нужны для AG News.
+
+### Реализация
+
+```python
+pipeline = Pipeline([
+    ("tfidf", TfidfVectorizer(
+        ngram_range=(1, 2),
+        max_features=100_000,
+        sublinear_tf=True,
+        stop_words="english"
+    )),
+    ("clf", LogisticRegression(C=2.0, max_iter=1000, solver="lbfgs"))
+])
+```
 
 ### BoF
 
@@ -178,9 +211,13 @@ Fine-tuned DistilBERT превзошёл все кастомные архите�
 
 **Почему AG News так легко решается:** задача имеет сильный лексический сигнал, а порядок слов малоинформативен. Поэтому даже простой BoF показывает 91%, а DistilBERT с контекстными эмбеддингами выходит на 94.7% за 2 эпохи.
 
+
+**Дополнение:** простой TF-IDF + LogReg (92.4%) обгоняет кастомный Transformer (92.2%) при **разнице во времени обучения более чем в 350 раз**. Fine-tuned DistilBERT даёт +2.25%, но требует GPU и на порядки больше ресурсов на инференс.
+
+```markdown
 ### Файлы
 
-- `config.py` — гиперпараметры и константы.
-- `data.py` — загрузка датасета, токенизация, подготовка.
-- `train.py` — fine-tuning через `Trainer`.
-- Чекпоинт: `distilbert_agnews_final/`.
+- `config.py` - гиперпараметры и константы.
+- `data.py` - загрузка датасета, токенизация, подготовка.
+- `train.py` - fine-tuning DistilBERT через `Trainer`.
+- `baseline_logreg.py` - TF-IDF + Logistic Regression (18 сек, 92.4%).
